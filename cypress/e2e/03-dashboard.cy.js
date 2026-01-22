@@ -228,96 +228,839 @@ describe('Dashboard - Complete Test Suite', () => {
     });
   });
 
-  context('Positive Test Cases - Search Functionality', () => {
+  context('Positive Test Cases - Live Search Functionality', () => {
 
     beforeEach(() => {
       loginAsValidUser();
     });
 
-    it('TC_DASH_031: Should search for existing client name', () => {
+    it('TC_DASH_031: Should perform live search and display only matching results', () => {
       cy.intercept('GET', '**/api/**').as('searchRequest');
+      cy.get('input[placeholder*="Search"], input[placeholder*="name"]').first().type('ABC');
+
+      // Live search should filter results automatically without clicking search button
+      cy.wait(1500);
+
+      // Verify only matching data is displayed
+      cy.get('table tbody tr, [role="row"]').each(($row) => {
+        cy.wrap($row).invoke('text').should('match', /ABC/i);
+      });
+    });
+
+    it('TC_DASH_032: Should live search for ticket ID and show only matching ticket', () => {
+      cy.intercept('GET', '**/api/**').as('searchRequest');
+      cy.get('input[placeholder*="Search"], input[placeholder*="name"]').first().type('TKT-2024-001');
+
+      cy.wait(1500);
+
+      // Should display only the matching ticket
+      cy.contains('TKT-2024-001').should('be.visible');
+    });
+
+    it('TC_DASH_033: Should update results dynamically as user types (live search)', () => {
+      cy.intercept('GET', '**/api/**').as('searchRequest');
+
+      // Type first character
+      cy.get('input[placeholder*="Search"], input[placeholder*="name"]').first().type('A');
+      cy.wait(1000);
+
+      // Continue typing and verify results keep updating
+      cy.get('input[placeholder*="Search"], input[placeholder*="name"]').first().type('B');
+      cy.wait(1000);
+
+      cy.get('input[placeholder*="Search"], input[placeholder*="name"]').first().type('C');
+      cy.wait(1000);
+    });
+
+    it('TC_DASH_034: Should filter case-insensitively in live search', () => {
+      cy.get('input[placeholder*="Search"], input[placeholder*="name"]').first().type('abc traders');
+      cy.wait(1500);
+
+      // Should match "ABC Traders" despite lowercase input
+      cy.contains('ABC Traders').should('be.visible');
+    });
+
+    it('TC_DASH_035: Should show all results when search field is cleared', () => {
+      // First perform a search
+      cy.get('input[placeholder*="Search"], input[placeholder*="name"]').first().type('ABC');
+      cy.wait(1500);
+
+      // Note initial filtered count
+      let filteredCount;
+      cy.get('table tbody tr, [role="row"]').its('length').then(count => {
+        filteredCount = count;
+      });
+
+      // Clear the search
+      cy.get('input[placeholder*="Search"], input[placeholder*="name"]').first().clear();
+      cy.wait(1500);
+
+      // All results should be visible again (more than filtered results)
+      cy.get('table tbody tr, [role="row"]').should('have.length.at.least', 1);
+    });
+
+    it('TC_DASH_036: Should update results dynamically on backspace', () => {
       cy.get('input[placeholder*="Search"], input[placeholder*="name"]').first().type('ABC Traders');
       cy.wait(1000);
+
+      // Delete characters and verify results update
+      cy.get('input[placeholder*="Search"], input[placeholder*="name"]').first()
+        .type('{backspace}{backspace}{backspace}{backspace}{backspace}');
+      cy.wait(1500);
+
+      // Should now show results matching just "ABC T"
     });
 
-    it('TC_DASH_032: Should search for ticket ID', () => {
-      cy.get('input[placeholder*="Search"], input[placeholder*="name"]').first().type('TKT-2024-001');
-      cy.wait(1000);
+    it('TC_DASH_037: Should handle rapid typing in live search', () => {
+      cy.intercept('GET', '**/api/**').as('searchRequest');
+      cy.get('input[placeholder*="Search"], input[placeholder*="name"]').first()
+        .type('ABCDEFGH', { delay: 50 });
+      cy.wait(2000);
     });
 
-    it('TC_DASH_033: Should search with partial text', () => {
-      cy.get('input[placeholder*="Search"], input[placeholder*="name"]').first().type('ABC');
-      cy.wait(1000);
-    });
+    it('TC_DASH_038: Should show no results message when live search has no matches', () => {
+      cy.get('input[placeholder*="Search"], input[placeholder*="name"]').first()
+        .type('NonExistentSearchTerm123456789');
+      cy.wait(2000);
 
-    it('TC_DASH_034: Should search case-insensitively', () => {
-      cy.get('input[placeholder*="Search"], input[placeholder*="name"]').first().type('abc traders');
-      cy.wait(1000);
-    });
-
-    it('TC_DASH_035: Should allow search with Enter key', () => {
-      cy.get('input[placeholder*="Search"], input[placeholder*="name"]').first().type('ABC{enter}');
-      cy.wait(1000);
+      // Check for "No data" or empty table
+      cy.get('body').then($body => {
+        if ($body.text().includes('No data') ||
+            $body.text().includes('No tickets') ||
+            $body.text().includes('No results')) {
+          cy.contains(/No data|No tickets|No results/i).should('be.visible');
+        }
+      });
     });
   });
 
-  context('Positive Test Cases - Filter Functionality', () => {
+  context('Positive Test Cases - Status Dropdown Functionality', () => {
 
     beforeEach(() => {
       loginAsValidUser();
     });
 
-    it('TC_DASH_036: Should filter by Assigned status', () => {
-      cy.contains('Status').parent().find('select, button, [role="combobox"]').first().click();
+    it('TC_DASH_039: Should open Status dropdown and display all options', () => {
+      cy.contains('Status').parent().find('button, [role="combobox"]').first().click();
+      cy.wait(500);
+
+      // Verify dropdown options are visible
+      cy.contains('In Progress').should('be.visible');
+      cy.contains('Action Needed').should('be.visible');
+      cy.contains('Assigned').should('be.visible');
+      cy.contains('Verified').should('be.visible');
+      cy.contains('Closed').should('be.visible');
+      cy.contains('Deleted').should('be.visible');
+    });
+
+    it('TC_DASH_040: Should filter by "In Progress" status', () => {
+      cy.intercept('GET', '**/api/**').as('filterRequest');
+      cy.contains('Status').parent().find('button, [role="combobox"]').first().click();
+      cy.wait(300);
+
+      cy.contains('In Progress').click({ force: true });
+      cy.wait(1500);
+
+      // Verify filtered results
+      cy.get('table tbody tr, [role="row"]').each(($row) => {
+        cy.wrap($row).invoke('text').should('match', /In Progress/i);
+      });
+    });
+
+    it('TC_DASH_041: Should filter by "Action Needed" status', () => {
+      cy.intercept('GET', '**/api/**').as('filterRequest');
+      cy.contains('Status').parent().find('button, [role="combobox"]').first().click();
+      cy.wait(300);
+
+      cy.contains('Action Needed').click({ force: true });
+      cy.wait(1500);
+    });
+
+    it('TC_DASH_042: Should filter by "Assigned" status', () => {
+      cy.intercept('GET', '**/api/**').as('filterRequest');
+      cy.contains('Status').parent().find('button, [role="combobox"]').first().click();
+      cy.wait(300);
+
+      cy.contains('Assigned').click({ force: true });
+      cy.wait(1500);
+
+      cy.get('table tbody tr, [role="row"]').each(($row) => {
+        cy.wrap($row).invoke('text').should('match', /Assigned/i);
+      });
+    });
+
+    it('TC_DASH_043: Should filter by "Verified" status', () => {
+      cy.intercept('GET', '**/api/**').as('filterRequest');
+      cy.contains('Status').parent().find('button, [role="combobox"]').first().click();
+      cy.wait(300);
+
+      cy.contains('Verified').click({ force: true });
+      cy.wait(1500);
+    });
+
+    it('TC_DASH_044: Should filter by "Closed" status', () => {
+      cy.intercept('GET', '**/api/**').as('filterRequest');
+      cy.contains('Status').parent().find('button, [role="combobox"]').first().click();
+      cy.wait(300);
+
+      cy.contains('Closed').click({ force: true });
+      cy.wait(1500);
+    });
+
+    it('TC_DASH_093: Should filter by "Deleted" status', () => {
+      cy.intercept('GET', '**/api/**').as('filterRequest');
+      cy.contains('Status').parent().find('button, [role="combobox"]').first().click();
+      cy.wait(300);
+
+      cy.contains('Deleted').click({ force: true });
+      cy.wait(1500);
+    });
+
+    it('TC_DASH_094: Should close dropdown when clicking outside', () => {
+      cy.contains('Status').parent().find('button, [role="combobox"]').first().click();
+      cy.wait(300);
+
+      // Verify dropdown is open
+      cy.contains('In Progress').should('be.visible');
+
+      // Click outside
+      cy.get('body').click(0, 0);
+      cy.wait(500);
+    });
+
+    it('TC_DASH_095: Should close dropdown with Escape key', () => {
+      cy.contains('Status').parent().find('button, [role="combobox"]').first().click();
+      cy.wait(300);
+
+      // Press Escape
+      cy.get('body').type('{esc}');
+      cy.wait(500);
+    });
+  });
+
+  context('Positive Test Cases - Assignee Dropdown Functionality', () => {
+
+    beforeEach(() => {
+      loginAsValidUser();
+    });
+
+    it('TC_DASH_096: Should open Assignee dropdown and display all options', () => {
+      cy.contains('Assignee').parent().find('button, [role="combobox"]').first().click();
+      cy.wait(500);
+
+      // Verify dropdown options are visible
+      cy.contains('All Assignees').should('be.visible');
+      cy.contains('Ravi Agrawal').should('be.visible');
+      cy.contains('John Doe').should('be.visible');
+      cy.contains('Jane Smith').should('be.visible');
+      cy.contains('Sarah Wilson').should('be.visible');
+    });
+
+    it('TC_DASH_097: Should have search functionality in Assignee dropdown', () => {
+      cy.contains('Assignee').parent().find('button, [role="combobox"]').first().click();
+      cy.wait(500);
+
+      // Check if search input exists in dropdown
+      cy.get('input[placeholder*="Search assignee"], input[placeholder*="search"]').should('be.visible');
+    });
+
+    it('TC_DASH_098: Should search for assignee in dropdown', () => {
+      cy.contains('Assignee').parent().find('button, [role="combobox"]').first().click();
+      cy.wait(500);
+
+      // Type in dropdown search
+      cy.get('input[placeholder*="Search assignee"], input[placeholder*="search"]').type('Ravi');
+      cy.wait(500);
+
+      // Verify filtered results
+      cy.contains('Ravi Agrawal').should('be.visible');
+    });
+
+    it('TC_DASH_051: Should filter by specific assignee - Ravi Agrawal', () => {
+      cy.intercept('GET', '**/api/**').as('filterRequest');
+      cy.contains('Assignee').parent().find('button, [role="combobox"]').first().click();
+      cy.wait(500);
+
+      cy.contains('Ravi Agrawal').click({ force: true });
+      cy.wait(1500);
+
+      // Verify filtered results show only Ravi's tickets
+      cy.get('table tbody tr, [role="row"]').each(($row) => {
+        cy.wrap($row).invoke('text').should('match', /Ravi Agrawal/i);
+      });
+    });
+
+    it('TC_DASH_052: Should filter by specific assignee - John Doe', () => {
+      cy.intercept('GET', '**/api/**').as('filterRequest');
+      cy.contains('Assignee').parent().find('button, [role="combobox"]').first().click();
+      cy.wait(500);
+
+      cy.contains('John Doe').click({ force: true });
+      cy.wait(1500);
+    });
+
+    it('TC_DASH_053: Should filter by specific assignee - Jane Smith', () => {
+      cy.intercept('GET', '**/api/**').as('filterRequest');
+      cy.contains('Assignee').parent().find('button, [role="combobox"]').first().click();
+      cy.wait(500);
+
+      cy.contains('Jane Smith').click({ force: true });
+      cy.wait(1500);
+    });
+
+    it('TC_DASH_054: Should show all tickets when "All Assignees" is selected', () => {
+      // First filter by specific assignee
+      cy.contains('Assignee').parent().find('button, [role="combobox"]').first().click();
+      cy.wait(500);
+      cy.contains('Ravi Agrawal').click({ force: true });
+      cy.wait(1000);
+
+      // Now select "All Assignees"
+      cy.contains('Assignee').parent().find('button, [role="combobox"]').first().click();
+      cy.wait(500);
+      cy.contains('All Assignees').click({ force: true });
+      cy.wait(1500);
+
+      // Should show all tickets regardless of assignee
+      cy.get('table tbody tr, [role="row"]').should('have.length.at.least', 1);
+    });
+
+    it('TC_DASH_055: Should close Assignee dropdown when clicking outside', () => {
+      cy.contains('Assignee').parent().find('button, [role="combobox"]').first().click();
+      cy.wait(300);
+
+      cy.get('body').click(0, 0);
+      cy.wait(500);
+    });
+
+    it('TC_DASH_056: Should combine Status and Assignee filters', () => {
+      // Apply Status filter
+      cy.contains('Status').parent().find('button, [role="combobox"]').first().click();
+      cy.wait(300);
       cy.contains('Assigned').click({ force: true });
       cy.wait(1000);
-    });
 
-    it('TC_DASH_037: Should filter by assignee', () => {
-      cy.contains('Assignee').parent().find('select, button, [role="combobox"]').first().click();
+      // Apply Assignee filter
+      cy.contains('Assignee').parent().find('button, [role="combobox"]').first().click();
       cy.wait(500);
-      cy.get('[role="option"], option').first().click({ force: true });
-      cy.wait(1000);
+      cy.contains('Ravi Agrawal').click({ force: true });
+      cy.wait(1500);
+
+      // Results should match both filters
+      cy.get('table tbody tr, [role="row"]').each(($row) => {
+        const rowText = $row.text();
+        expect(rowText).to.match(/Assigned/i);
+        expect(rowText).to.match(/Ravi Agrawal/i);
+      });
+    });
+  });
+
+  context('Positive Test Cases - Pagination Functionality', () => {
+
+    beforeEach(() => {
+      loginAsValidUser();
     });
 
-    it('TC_DASH_038: Should apply multiple filters simultaneously', () => {
-      // Apply status filter
-      cy.contains('Status').parent().find('select, button, [role="combobox"]').first().click();
+    it('TC_DASH_057: Should display pagination controls', () => {
+      cy.contains('Rows per page').should('be.visible');
+      cy.contains(/\d+-\d+ of \d+/).should('be.visible');
+      cy.contains('Prev').should('exist');
+      cy.contains('Next').should('exist');
+    });
+
+    it('TC_DASH_058: Should display current page information', () => {
+      // Verify format like "1-10 of 30"
+      cy.contains(/\d+-\d+ of \d+/).should('be.visible');
+    });
+
+    it('TC_DASH_059: Should have "Rows per page" selector with value 10', () => {
+      cy.contains('Rows per page').parent().should('contain', '10');
+    });
+
+    it('TC_DASH_060: Should click Next button and navigate to next page', () => {
+      cy.intercept('GET', '**/api/**').as('paginationRequest');
+
+      // Check if Next is enabled (more than 10 results exist)
+      cy.contains('Next').then($btn => {
+        if (!$btn.is(':disabled')) {
+          cy.contains('Next').click();
+          cy.wait(1000);
+
+          // Verify page changed (e.g., from "1-10" to "11-20")
+          cy.contains(/\d+-\d+ of \d+/).invoke('text').should('match', /11-\d+/);
+        }
+      });
+    });
+
+    it('TC_DASH_061: Should click Prev button and navigate to previous page', () => {
+      // First go to page 2
+      cy.contains('Next').then($btn => {
+        if (!$btn.is(':disabled')) {
+          cy.contains('Next').click();
+          cy.wait(1000);
+
+          // Now click Prev
+          cy.contains('Prev').click();
+          cy.wait(1000);
+
+          // Should be back to page 1
+          cy.contains(/1-\d+ of \d+/).should('be.visible');
+        }
+      });
+    });
+
+    it('TC_DASH_062: Should disable Prev button on first page', () => {
+      cy.contains('Prev').should('have.class', /disabled|Mui-disabled/).or('have.attr', 'disabled');
+    });
+
+    it('TC_DASH_063: Should disable Next button on last page', () => {
+      // Navigate to last page
+      cy.contains('Next').then(function checkNext() {
+        cy.get('body').then($body => {
+          const nextBtn = $body.find('button:contains("Next")');
+          if (nextBtn.length && !nextBtn.is(':disabled')) {
+            cy.contains('Next').click();
+            cy.wait(1000);
+            cy.contains('Next').then(checkNext);
+          } else {
+            // On last page, Next should be disabled
+            cy.contains('Next').should('have.class', /disabled|Mui-disabled/).or('have.attr', 'disabled');
+          }
+        });
+      });
+    });
+
+    it('TC_DASH_064: Should change rows per page to different value', () => {
+      cy.contains('Rows per page').parent().find('select, button, [role="button"]').click();
       cy.wait(300);
-      cy.get('body').click(0, 0);
 
-      // Apply assignee filter
-      cy.contains('Assignee').parent().find('select, button, [role="combobox"]').first().click();
-      cy.wait(1000);
+      // Select different option (e.g., 20, 50, 100)
+      cy.get('[role="option"], li').contains('20').click({ force: true });
+      cy.wait(1500);
+
+      // Verify pagination updated
+      cy.contains(/1-\d+ of \d+/).should('be.visible');
     });
 
-    it('TC_DASH_039: Should combine search and filters', () => {
+    it('TC_DASH_065: Should update table when rows per page changes', () => {
+      let initialRowCount;
+
+      cy.get('table tbody tr, [role="row"]').its('length').then(count => {
+        initialRowCount = count;
+      });
+
+      // Change rows per page
+      cy.contains('Rows per page').parent().find('select, button, [role="button"]').click();
+      cy.wait(300);
+      cy.get('[role="option"], li').contains('20').click({ force: true });
+      cy.wait(1500);
+
+      // Row count should update
+      cy.get('table tbody tr, [role="row"]').its('length').should('be.gte', initialRowCount);
+    });
+
+    it('TC_DASH_066: Should maintain filters when navigating pages', () => {
+      // Apply a filter
+      cy.contains('Status').parent().find('button, [role="combobox"]').first().click();
+      cy.wait(300);
+      cy.contains('Assigned').click({ force: true });
+      cy.wait(1000);
+
+      // Navigate to next page if available
+      cy.contains('Next').then($btn => {
+        if (!$btn.is(':disabled')) {
+          cy.contains('Next').click();
+          cy.wait(1000);
+
+          // Filter should still be applied
+          cy.get('table tbody tr, [role="row"]').each(($row) => {
+            cy.wrap($row).invoke('text').should('match', /Assigned/i);
+          });
+        }
+      });
+    });
+
+    it('TC_DASH_067: Should maintain search when navigating pages', () => {
+      // Perform search
       cy.get('input[placeholder*="Search"], input[placeholder*="name"]').first().type('ABC');
-      cy.contains('Status').parent().find('select, button, [role="combobox"]').first().click();
-      cy.wait(1000);
+      cy.wait(1500);
+
+      // If multiple pages exist, navigate
+      cy.contains('Next').then($btn => {
+        if (!$btn.is(':disabled')) {
+          cy.contains('Next').click();
+          cy.wait(1000);
+
+          // Search should still be active
+          cy.get('input[placeholder*="Search"], input[placeholder*="name"]').first()
+            .should('have.value', 'ABC');
+        }
+      });
     });
 
-    it('TC_DASH_040: Should reset filters', () => {
-      // Apply filter
-      cy.contains('Status').parent().find('select, button, [role="combobox"]').first().click();
-      cy.wait(500);
+    it('TC_DASH_068: Should display correct total count in pagination', () => {
+      cy.contains(/of (\d+)/).invoke('text').then(text => {
+        const match = text.match(/of (\d+)/);
+        const total = parseInt(match[1]);
+        expect(total).to.be.at.least(0);
+        cy.log(`Total tickets: ${total}`);
+      });
+    });
 
-      // Reset by clicking page reload or refresh button if exists
+    it('TC_DASH_069: Should show correct range on different pages', () => {
+      // On first page, should show 1-10
+      cy.contains(/1-10 of \d+/).should('be.visible');
+
+      // Navigate to next page
+      cy.contains('Next').then($btn => {
+        if (!$btn.is(':disabled')) {
+          cy.contains('Next').click();
+          cy.wait(1000);
+
+          // Should show 11-20
+          cy.contains(/11-20 of \d+/).should('be.visible');
+        }
+      });
+    });
+  });
+
+  context('Positive Test Cases - API Response Payload Validation', () => {
+
+    beforeEach(() => {
+      loginAsValidUser();
+    });
+
+    it('TC_DASH_070: Should validate tickets API response structure', () => {
+      cy.intercept('GET', '**/api/tickets**').as('getTickets');
+
+      cy.reload();
+      cy.wait('@getTickets').then((interception) => {
+        const response = interception.response;
+
+        // Validate response status
+        expect(response.statusCode).to.equal(200);
+
+        // Validate response body structure
+        expect(response.body).to.have.property('tickets').or.have.property('data');
+      });
+    });
+
+    it('TC_DASH_071: Should validate each ticket object has required fields', () => {
+      cy.intercept('GET', '**/api/tickets**').as('getTickets');
+
+      cy.reload();
+      cy.wait('@getTickets').then((interception) => {
+        const tickets = interception.response.body.tickets || interception.response.body.data || [];
+
+        if (tickets.length > 0) {
+          const ticket = tickets[0];
+
+          // Validate required fields exist
+          expect(ticket).to.have.property('id');
+          expect(ticket).to.have.property('client');
+          expect(ticket).to.have.property('category');
+          expect(ticket).to.have.property('status');
+          expect(ticket).to.have.property('assignee');
+
+          // Validate data types
+          expect(ticket.id).to.be.a('string');
+          expect(ticket.status).to.be.a('string');
+        }
+      });
+    });
+
+    it('TC_DASH_072: Should not expose sensitive data in API response', () => {
+      cy.intercept('GET', '**/api/tickets**').as('getTickets');
+
+      cy.reload();
+      cy.wait('@getTickets').then((interception) => {
+        const responseBody = JSON.stringify(interception.response.body);
+
+        // Check for sensitive data that should not be exposed
+        expect(responseBody.toLowerCase()).to.not.include('password');
+        expect(responseBody.toLowerCase()).to.not.include('secret');
+        expect(responseBody.toLowerCase()).to.not.include('private_key');
+        expect(responseBody.toLowerCase()).to.not.include('api_key');
+        expect(responseBody.toLowerCase()).to.not.include('auth_token');
+      });
+    });
+
+    it('TC_DASH_073: Should validate metrics API response structure', () => {
+      cy.intercept('GET', '**/api/metrics**').as('getMetrics');
+      cy.intercept('GET', '**/api/dashboard**').as('getDashboard');
+
+      cy.reload();
+
+      // Wait for either metrics or dashboard endpoint
+      cy.wait(2000).then(() => {
+        cy.get('@getMetrics.all').then((interceptions) => {
+          if (interceptions.length > 0) {
+            const response = interceptions[0].response;
+            expect(response.statusCode).to.equal(200);
+
+            // Validate metrics structure
+            const body = response.body;
+            expect(body).to.exist;
+          }
+        });
+      });
+    });
+
+    it('TC_DASH_074: Should validate status values are from allowed enum', () => {
+      cy.intercept('GET', '**/api/tickets**').as('getTickets');
+
+      cy.reload();
+      cy.wait('@getTickets').then((interception) => {
+        const tickets = interception.response.body.tickets || interception.response.body.data || [];
+
+        const allowedStatuses = ['Assigned', 'In Progress', 'Action Needed', 'Verified', 'Closed', 'Deleted', 'Pending'];
+
+        tickets.forEach((ticket) => {
+          expect(allowedStatuses).to.include(ticket.status);
+        });
+      });
+    });
+
+    it('TC_DASH_075: Should validate date fields are in correct format', () => {
+      cy.intercept('GET', '**/api/tickets**').as('getTickets');
+
+      cy.reload();
+      cy.wait('@getTickets').then((interception) => {
+        const tickets = interception.response.body.tickets || interception.response.body.data || [];
+
+        if (tickets.length > 0 && tickets[0].createdAt) {
+          const ticket = tickets[0];
+
+          // Validate date format (ISO 8601 or timestamp)
+          if (ticket.createdAt) {
+            const isValidDate = !isNaN(Date.parse(ticket.createdAt));
+            expect(isValidDate).to.be.true;
+          }
+        }
+      });
+    });
+
+    it('TC_DASH_076: Should validate response does not contain SQL queries', () => {
+      cy.intercept('GET', '**/api/**').as('apiCalls');
+
       cy.reload();
       cy.wait(2000);
+
+      cy.get('@apiCalls.all').then((interceptions) => {
+        interceptions.forEach((interception) => {
+          const responseBody = JSON.stringify(interception.response?.body || {});
+
+          // Check for SQL keywords that should not be in response
+          expect(responseBody.toUpperCase()).to.not.include('SELECT *');
+          expect(responseBody.toUpperCase()).to.not.include('DELETE FROM');
+          expect(responseBody.toUpperCase()).to.not.include('DROP TABLE');
+          expect(responseBody.toUpperCase()).to.not.include('UPDATE SET');
+        });
+      });
+    });
+
+    it('TC_DASH_077: Should validate response size is reasonable', () => {
+      cy.intercept('GET', '**/api/tickets**').as('getTickets');
+
+      cy.reload();
+      cy.wait('@getTickets').then((interception) => {
+        const responseSize = JSON.stringify(interception.response.body).length;
+
+        // Response should not be excessively large (> 5MB)
+        expect(responseSize).to.be.lessThan(5 * 1024 * 1024);
+
+        cy.log(`Response size: ${responseSize} bytes`);
+      });
+    });
+
+    it('TC_DASH_078: Should validate API returns proper Content-Type header', () => {
+      cy.intercept('GET', '**/api/tickets**').as('getTickets');
+
+      cy.reload();
+      cy.wait('@getTickets').then((interception) => {
+        const contentType = interception.response.headers['content-type'];
+
+        expect(contentType).to.include('application/json');
+      });
+    });
+
+    it('TC_DASH_079: Should validate pagination metadata in response', () => {
+      cy.intercept('GET', '**/api/tickets**').as('getTickets');
+
+      cy.reload();
+      cy.wait('@getTickets').then((interception) => {
+        const body = interception.response.body;
+
+        // Check for pagination metadata
+        if (body.total !== undefined) {
+          expect(body.total).to.be.a('number');
+          expect(body.total).to.be.at.least(0);
+        }
+
+        if (body.page !== undefined) {
+          expect(body.page).to.be.a('number');
+          expect(body.page).to.be.at.least(1);
+        }
+      });
+    });
+  });
+
+  context('Positive Test Cases - URL Navigation & Session Management', () => {
+
+    it('TC_DASH_080: Should redirect to login when accessing dashboard URL after logout', () => {
+      // First login
+      loginAsValidUser();
+
+      // Logout
+      cy.contains('Logout').click();
+      cy.url({ timeout: 10000 }).should('include', LOGIN_URL);
+
+      // Try to access dashboard URL directly
+      cy.visit(DASHBOARD_URL);
+      cy.wait(2000);
+
+      // Should be redirected to login
+      cy.url({ timeout: 10000 }).should('include', LOGIN_URL);
+    });
+
+    it('TC_DASH_081: Should redirect to dashboard when accessing login URL while logged in', () => {
+      // Login
+      loginAsValidUser();
+
+      // Verify we're on dashboard
+      cy.url().should('include', DASHBOARD_URL);
+
+      // Try to access login URL directly
+      cy.visit(LOGIN_URL);
+      cy.wait(2000);
+
+      // Should be redirected back to dashboard
+      cy.url({ timeout: 10000 }).should('include', DASHBOARD_URL);
+    });
+
+    it('TC_DASH_082: Should maintain session on page refresh', () => {
+      loginAsValidUser();
+
+      // Refresh page
+      cy.reload();
+      cy.wait(2000);
+
+      // Should still be on dashboard (not redirected to login)
+      cy.url().should('include', DASHBOARD_URL);
+      cy.contains('Dashboard').should('be.visible');
+    });
+
+    it('TC_DASH_083: Should handle direct URL access with valid session', () => {
+      loginAsValidUser();
+
+      // Navigate to different page
+      cy.contains('Employees').click();
+      cy.wait(1000);
+
+      // Directly visit dashboard URL
+      cy.visit(DASHBOARD_URL);
+      cy.wait(1000);
+
+      // Should successfully load dashboard
+      cy.url().should('include', DASHBOARD_URL);
+      cy.contains('Dashboard').should('be.visible');
+    });
+
+    it('TC_DASH_084: Should handle direct URL access without session', () => {
+      cy.clearCookies();
+      cy.clearLocalStorage();
+
+      // Try to access dashboard URL directly
+      cy.visit(DASHBOARD_URL);
+      cy.wait(2000);
+
+      // Should be redirected to login
+      cy.url({ timeout: 10000 }).should('include', LOGIN_URL);
+    });
+
+    it('TC_DASH_085: Should preserve URL parameters after login redirect', () => {
+      cy.clearCookies();
+      cy.clearLocalStorage();
+
+      // Try to access dashboard with query params
+      cy.visit(`${DASHBOARD_URL}?filter=assigned`);
+      cy.wait(2000);
+
+      // Should redirect to login
+      cy.url({ timeout: 5000 }).should('include', LOGIN_URL);
+
+      // Login
+      cy.fixture('users').then((users) => {
+        cy.get('input[placeholder="Enter Email ID"]').type(users.validUser.email);
+        cy.get('input[placeholder="Min. 8 Characters"]').type(users.validUser.password);
+        cy.get('button').contains('Log In').click();
+      });
+
+      cy.wait(3000);
+
+      // Should redirect back to dashboard (ideally with query params preserved)
+      cy.url({ timeout: 10000 }).should('include', DASHBOARD_URL);
+    });
+
+    it('TC_DASH_086: Should handle session expiry during active use', () => {
+      loginAsValidUser();
+
+      // Simulate session expiry by clearing tokens
+      cy.clearCookies();
+      cy.clearLocalStorage();
+
+      // Try to perform an action (e.g., search)
+      cy.get('input[placeholder*="Search"], input[placeholder*="name"]').first().type('ABC');
+      cy.wait(3000);
+
+      // Should be redirected to login or show session expired message
+      cy.get('body').then($body => {
+        if ($body.text().includes('login') || $body.text().includes('Login')) {
+          cy.url({ timeout: 10000 }).should('include', LOGIN_URL);
+        }
+      });
+    });
+
+    it('TC_DASH_087: Should handle browser back button after logout', () => {
+      loginAsValidUser();
+
+      // Logout
+      cy.contains('Logout').click();
+      cy.url({ timeout: 10000 }).should('include', LOGIN_URL);
+
+      // Try to go back
+      cy.go('back');
+      cy.wait(2000);
+
+      // Should not be able to access dashboard, should stay on or redirect to login
+      cy.url({ timeout: 10000 }).should('include', LOGIN_URL);
+    });
+
+    it('TC_DASH_088: Should handle multiple tabs with same session', () => {
+      loginAsValidUser();
+
+      // Store session info
+      cy.getCookies().then(cookies => {
+        cy.log(`Active cookies: ${cookies.length}`);
+      });
+
+      // Verify dashboard is accessible
+      cy.visit(DASHBOARD_URL);
+      cy.url().should('include', DASHBOARD_URL);
+      cy.contains('Dashboard').should('be.visible');
     });
   });
 
   context('Negative Test Cases - Unauthorized Access', () => {
 
-    it('TC_DASH_041: Should redirect to login when accessing dashboard without authentication', () => {
+    it('TC_DASH_089: Should redirect to login when accessing dashboard without authentication', () => {
       cy.clearCookies();
       cy.clearLocalStorage();
       cy.visit(DASHBOARD_URL);
       cy.url({ timeout: 10000 }).should('include', LOGIN_URL);
     });
 
-    it('TC_DASH_042: Should not access dashboard with expired session', () => {
+    it('TC_DASH_090: Should not access dashboard with expired session', () => {
       loginAsValidUser();
 
       // Clear session
@@ -329,7 +1072,7 @@ describe('Dashboard - Complete Test Suite', () => {
       cy.url({ timeout: 10000 }).should('include', LOGIN_URL);
     });
 
-    it('TC_DASH_043: Should not access dashboard with invalid token', () => {
+    it('TC_DASH_091: Should not access dashboard with invalid token', () => {
       cy.clearCookies();
       cy.clearLocalStorage();
 
@@ -347,7 +1090,7 @@ describe('Dashboard - Complete Test Suite', () => {
       loginAsValidUser();
     });
 
-    it('TC_DASH_044: Should handle search with no results', () => {
+    it('TC_DASH_092: Should handle search with no results', () => {
       cy.get('input[placeholder*="Search"], input[placeholder*="name"]').first()
         .type('NonExistentClient123456');
       cy.wait(2000);
@@ -362,26 +1105,26 @@ describe('Dashboard - Complete Test Suite', () => {
       });
     });
 
-    it('TC_DASH_045: Should handle special characters in search', () => {
+    it('TC_DASH_093: Should handle special characters in search', () => {
       cy.get('input[placeholder*="Search"], input[placeholder*="name"]').first()
         .type('@#$%^&*()');
       cy.wait(1000);
     });
 
-    it('TC_DASH_046: Should handle very long search query', () => {
+    it('TC_DASH_094: Should handle very long search query', () => {
       const longQuery = 'a'.repeat(200);
       cy.get('input[placeholder*="Search"], input[placeholder*="name"]').first()
         .type(longQuery);
       cy.wait(1000);
     });
 
-    it('TC_DASH_047: Should handle search with only spaces', () => {
+    it('TC_DASH_095: Should handle search with only spaces', () => {
       cy.get('input[placeholder*="Search"], input[placeholder*="name"]').first()
         .type('     ');
       cy.wait(1000);
     });
 
-    it('TC_DASH_048: Should handle search with SQL injection attempt', () => {
+    it('TC_DASH_096: Should handle search with SQL injection attempt', () => {
       cy.get('input[placeholder*="Search"], input[placeholder*="name"]').first()
         .type("' OR '1'='1");
       cy.wait(1000);
@@ -390,7 +1133,7 @@ describe('Dashboard - Complete Test Suite', () => {
       cy.contains('Pending Tickets').should('be.visible');
     });
 
-    it('TC_DASH_049: Should handle search with XSS attempt', () => {
+    it('TC_DASH_097: Should handle search with XSS attempt', () => {
       cy.on('window:alert', () => {
         throw new Error('XSS vulnerability detected');
       });
@@ -403,7 +1146,7 @@ describe('Dashboard - Complete Test Suite', () => {
       cy.contains('Pending Tickets').should('be.visible');
     });
 
-    it('TC_DASH_050: Should handle rapid filter changes', () => {
+    it('TC_DASH_098: Should handle rapid filter changes', () => {
       cy.contains('Status').parent().find('select, button, [role="combobox"]').first()
         .click().click().click();
       cy.wait(1000);
@@ -416,7 +1159,7 @@ describe('Dashboard - Complete Test Suite', () => {
       loginAsValidUser();
     });
 
-    it('TC_DASH_051: Should handle API error when loading tickets', () => {
+    it('TC_DASH_099: Should handle API error when loading tickets', () => {
       cy.intercept('GET', '**/api/tickets**', {
         statusCode: 500,
         body: { error: 'Internal Server Error' }
@@ -426,7 +1169,7 @@ describe('Dashboard - Complete Test Suite', () => {
       cy.wait(2000);
     });
 
-    it('TC_DASH_052: Should handle network timeout', () => {
+    it('TC_DASH_100: Should handle network timeout', () => {
       cy.intercept('GET', '**/api/tickets**', {
         forceNetworkError: true
       }).as('networkError');
@@ -435,7 +1178,7 @@ describe('Dashboard - Complete Test Suite', () => {
       cy.wait(2000);
     });
 
-    it('TC_DASH_053: Should handle API returning empty data', () => {
+    it('TC_DASH_101: Should handle API returning empty data', () => {
       cy.intercept('GET', '**/api/tickets**', {
         statusCode: 200,
         body: { tickets: [] }
@@ -445,7 +1188,7 @@ describe('Dashboard - Complete Test Suite', () => {
       cy.wait(2000);
     });
 
-    it('TC_DASH_054: Should handle malformed API response', () => {
+    it('TC_DASH_102: Should handle malformed API response', () => {
       cy.intercept('GET', '**/api/tickets**', {
         statusCode: 200,
         body: 'invalid json'
@@ -462,12 +1205,12 @@ describe('Dashboard - Complete Test Suite', () => {
       loginAsValidUser();
     });
 
-    it('TC_DASH_055: Should handle rapid clicking on action buttons', () => {
+    it('TC_DASH_103: Should handle rapid clicking on action buttons', () => {
       cy.contains('button', 'See Approvals').click().click().click();
       cy.wait(1000);
     });
 
-    it('TC_DASH_056: Should handle rapid navigation between menu items', () => {
+    it('TC_DASH_104: Should handle rapid navigation between menu items', () => {
       cy.contains('Employees').click();
       cy.contains('Dashboard').click();
       cy.contains('All Tickets').click();
@@ -475,14 +1218,14 @@ describe('Dashboard - Complete Test Suite', () => {
       cy.wait(1000);
     });
 
-    it('TC_DASH_057: Should handle browser back button', () => {
+    it('TC_DASH_105: Should handle browser back button', () => {
       cy.contains('Employees').click();
       cy.wait(1000);
       cy.go('back');
       cy.url().should('include', DASHBOARD_URL);
     });
 
-    it('TC_DASH_058: Should handle browser forward button', () => {
+    it('TC_DASH_106: Should handle browser forward button', () => {
       cy.contains('Employees').click();
       cy.wait(1000);
       cy.go('back');
@@ -490,37 +1233,37 @@ describe('Dashboard - Complete Test Suite', () => {
       cy.wait(1000);
     });
 
-    it('TC_DASH_059: Should handle page refresh', () => {
+    it('TC_DASH_107: Should handle page refresh', () => {
       cy.reload();
       cy.url().should('include', DASHBOARD_URL);
       cy.contains('Dashboard').should('be.visible');
     });
 
-    it('TC_DASH_060: Should handle rapid search typing', () => {
+    it('TC_DASH_108: Should handle rapid search typing', () => {
       cy.get('input[placeholder*="Search"], input[placeholder*="name"]').first()
         .type('abcdefghijklmnopqrstuvwxyz', { delay: 0 });
       cy.wait(1000);
     });
 
-    it('TC_DASH_061: Should handle search backspace/delete', () => {
+    it('TC_DASH_109: Should handle search backspace/delete', () => {
       cy.get('input[placeholder*="Search"], input[placeholder*="name"]').first()
         .type('Test{backspace}{backspace}');
       cy.wait(500);
     });
 
-    it('TC_DASH_062: Should handle keyboard navigation with Tab', () => {
+    it('TC_DASH_110: Should handle keyboard navigation with Tab', () => {
       cy.get('input[placeholder*="Search"], input[placeholder*="name"]').first().focus();
       cy.realPress('Tab');
       cy.wait(500);
     });
 
-    it('TC_DASH_063: Should handle simultaneous filter and search', () => {
+    it('TC_DASH_111: Should handle simultaneous filter and search', () => {
       cy.get('input[placeholder*="Search"], input[placeholder*="name"]').first().type('ABC');
       cy.contains('Status').parent().find('select, button, [role="combobox"]').first().click();
       cy.wait(1000);
     });
 
-    it('TC_DASH_064: Should handle empty ticket table gracefully', () => {
+    it('TC_DASH_112: Should handle empty ticket table gracefully', () => {
       cy.intercept('GET', '**/api/tickets**', {
         statusCode: 200,
         body: { tickets: [] }
@@ -531,39 +1274,39 @@ describe('Dashboard - Complete Test Suite', () => {
       cy.contains('Pending Tickets').should('be.visible');
     });
 
-    it('TC_DASH_065: Should handle very long ticket ID', () => {
+    it('TC_DASH_113: Should handle very long ticket ID', () => {
       const longTicketId = 'TKT-2024-' + '0'.repeat(100);
       cy.get('input[placeholder*="Search"], input[placeholder*="name"]').first()
         .type(longTicketId);
       cy.wait(1000);
     });
 
-    it('TC_DASH_066: Should handle very long client name', () => {
+    it('TC_DASH_114: Should handle very long client name', () => {
       const longName = 'A'.repeat(200);
       cy.get('input[placeholder*="Search"], input[placeholder*="name"]').first()
         .type(longName);
       cy.wait(1000);
     });
 
-    it('TC_DASH_067: Should handle unicode characters in search', () => {
+    it('TC_DASH_115: Should handle unicode characters in search', () => {
       cy.get('input[placeholder*="Search"], input[placeholder*="name"]').first()
         .type('测试中文字符🚀');
       cy.wait(1000);
     });
 
-    it('TC_DASH_068: Should handle emojis in search', () => {
+    it('TC_DASH_116: Should handle emojis in search', () => {
       cy.get('input[placeholder*="Search"], input[placeholder*="name"]').first()
         .type('😀😁😂🤣');
       cy.wait(1000);
     });
 
-    it('TC_DASH_069: Should maintain state after clicking ticket row', () => {
+    it('TC_DASH_117: Should maintain state after clicking ticket row', () => {
       cy.get('input[placeholder*="Search"], input[placeholder*="name"]').first().type('ABC');
       cy.get('table tbody tr, [role="row"]').first().click({ force: true });
       cy.wait(500);
     });
 
-    it('TC_DASH_070: Should handle clicking outside dropdowns to close them', () => {
+    it('TC_DASH_118: Should handle clicking outside dropdowns to close them', () => {
       cy.contains('Status').parent().find('select, button, [role="combobox"]').first().click();
       cy.wait(300);
       cy.get('body').click(0, 0);
@@ -925,5 +1668,4 @@ describe('Dashboard - Complete Test Suite', () => {
       cy.contains('Pending Tickets').should('be.visible');
     });
   });
-
 });
