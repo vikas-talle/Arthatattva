@@ -1,0 +1,11 @@
+{
+  "tickets": [
+    {
+      "id": "TKT-2024-001",
+      "client": "ABC Traders",
+      "category": "Sales Invoice",
+      "status": "Assigned",
+      "assignee": "Ravi Agrawal"
+    }
+  ]
+}

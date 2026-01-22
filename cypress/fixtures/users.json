@@ -1,0 +1,18 @@
+{
+  "validUser": {
+    "email": "jay.patel@perimattic.com",
+    "password": "Jay8433$"
+  },
+  "invalidUsers": [
+    {
+      "email": "invalid@test.com",
+      "password": "WrongPass123",
+      "description": "Invalid credentials"
+    },
+    {
+      "email": "notanemail",
+      "password": "Test123",
+      "description": "Invalid email format"
+    }
+  ]
+}
